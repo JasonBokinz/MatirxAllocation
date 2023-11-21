@@ -30,7 +30,7 @@ bst_sf* insert_bst_sf(matrix_sf *mat, bst_sf *root) {
             }
         } else if (mat->name > curr->mat->name) {
             if (!curr->right_child) {
-                curr->left_child = newNode;
+                curr->right_child = newNode;
                 return root;
             } else {
                 curr = curr->right_child;
@@ -41,11 +41,13 @@ bst_sf* insert_bst_sf(matrix_sf *mat, bst_sf *root) {
 }
 
 matrix_sf* find_bst_sf(char name, bst_sf *root) {
-    if (!root) { return NULL; }
+    if (!root) { 
+        return NULL; 
+    }
 
-    if (root->mat->name == name) { return root->mat; }
-    
-    if (name < root->mat->name) {
+    if (root->mat->name == name) { 
+        return root->mat; 
+    } else if (name < root->mat->name) {
         return find_bst_sf(name, root->left_child);
     } else {
         return find_bst_sf(name, root->right_child);
@@ -112,7 +114,7 @@ matrix_sf* create_matrix_sf(char name, const char *expr) {
     strcpy(expr_copy, expr);
 
     char *ptr;
-    char *curr = strtok_r(expr_copy, "=", &ptr);
+    char *curr = strtok_r((char *)expr_copy, "=", &ptr);
 
     /* Capture number of rows */
     curr = strtok_r(NULL, " \t\n", &ptr);
@@ -124,19 +126,21 @@ matrix_sf* create_matrix_sf(char name, const char *expr) {
 
     /* Capture the values */
     curr = strtok_r(NULL, "[", &ptr);
+
     int *vals = (int *)malloc(rows * cols * sizeof(int));
     for (unsigned int i = 0; i < rows * cols; i++) {
-        curr = strtok_r(NULL, " ;]\t\n", &ptr);
-        vals[i] = atoi(curr);
+        while (*curr && !isdigit((unsigned char)*curr) && *curr != '-') {
+            curr++;
+        }
+        vals[i] = strtol(curr, &curr, 10);
     }
 
-    matrix_sf *mat = malloc(sizeof(matrix_sf));
+    /* Create matrix */
+    matrix_sf *mat = (matrix_sf *)malloc(sizeof(char) + 2 * sizeof(unsigned int) + sizeof(int) * rows * cols);
     mat->name = name;
     mat->num_cols = cols;
     mat->num_rows = rows;
     memcpy(mat->values, vals, rows * cols * sizeof(int));
-    free(vals);
-    free(expr_copy);
 
     return mat;
 }
@@ -176,48 +180,61 @@ char* infix2postfix_sf(char *infix) {
 
 matrix_sf* evaluate_expr_sf(char name, char *expr, bst_sf *root) {
     char *postfix = infix2postfix_sf(expr);
+    printf("Postfix:%s\n", postfix);
     unsigned int len = strlen(postfix);
-    matrix_sf *stack = (matrix_sf *)malloc((len + 1) * sizeof(matrix_sf));
+    matrix_sf **stack = (matrix_sf **)malloc((len + 1) * sizeof(matrix_sf));
     int top = 0;
 
-    char *curr = strtok(postfix, " ");
-    while (curr) {
+    char *curr = postfix;
+    while (*curr != '\0') {
         if ((*curr >= 'A' && *curr <= 'Z') || (*curr >= 'a' && *curr <= 'z')) {
+            printf("Found a letter:\n");
             matrix_sf *operand = find_bst_sf(curr[0], root);
-            stack[++top] = *operand;
+            stack[++top] = operand;
+            print_matrix_sf(operand);
         }
         else if ((*curr == '+') || (*curr == '*') || (*curr == '\'')) {
-            matrix_sf* result;
+            printf("Found a sign:\n");
+            matrix_sf **result;
             switch(*curr) {
-                matrix_sf *operand1, *operand2;
+                matrix_sf **operand1, **operand2;
                 case '+': 
                     operand2 = &stack[top--];
                     operand1 = &stack[top--];
-                    result = add_mats_sf(operand1, operand2);
+                    print_matrix_sf(*operand1);
+                    print_matrix_sf(*operand2);
+
+                    result = add_mats_sf(*operand1, *operand2);
+                    print_matrix_sf(result);
                     break;
                 case '*':
                     operand2 = &stack[top--];
                     operand1 = &stack[top--];
-                    result = mult_mats_sf(operand1, operand2);
+                    print_matrix_sf(*operand1);
+                    print_matrix_sf(*operand2);
+
+                    result = mult_mats_sf(*operand1, *operand2);
                     break;
                 case '\'':
-                    result = transpose_mat_sf(&stack[top--]);
+                    print_matrix_sf(*operand1);
+
+                    result = transpose_mat_sf(stack[top--]);
                     break;
             }
-            stack[++top] = *result;
+            stack[++top] = result;
         }
-        curr = strtok(NULL, " ");
+        curr++;
     }
-    matrix_sf *evaluation = &stack[top--];
+    matrix_sf **evaluation = &stack[top--];
     free(postfix);
     free(stack);
-    return evaluation;
+    return *evaluation;
 }
 
 matrix_sf *execute_script_sf(char *filename) {
     FILE *file = fopen(filename, "r");
 
-    bst_sf *root = malloc(sizeof(bst_sf));
+    bst_sf *bst = NULL;
     char *line = NULL;
     size_t max = MAX_LINE_LEN;
     while (getline(&line, &max, file) != -1) {
@@ -230,16 +247,16 @@ matrix_sf *execute_script_sf(char *filename) {
         expr = curr;
         if (strstr(line, "[") != NULL) {
             matrix_sf *mat = create_matrix_sf(name, (const char*)expr);
-            root = insert_bst_sf(mat, root);
+            bst = insert_bst_sf(mat, bst);
         } else {
-            matrix_sf *result = evaluate_expr_sf(name, expr, root);
-            root = insert_bst_sf(result, root);
+            matrix_sf *result = evaluate_expr_sf(name, expr, bst);
+            bst = insert_bst_sf(result, bst);
         }
         free(line);
         line = NULL;
     }
     fclose(file);
-    free_bst_sf(root);
+    free_bst_sf(bst);
     return NULL;
 }
 
@@ -269,62 +286,47 @@ void print_matrix_sf(matrix_sf *mat) {
     printf("\n");
 }
 
-void printBST(bst_sf *root) {
+void printBST(bst_sf *root, int level) {
     if (root != NULL) {
-        // Print left subtree
-        printBST(root->left_child);
-
-        // Print current node
-        printf("Matrix %c:\n", root->mat->name);
-        for (unsigned int i = 0; i < root->mat->num_rows; i++) {
-            for (unsigned int j = 0; j < root->mat->num_cols; j++) {
-                printf("%d ", root->mat->values[i * root->mat->num_cols + j]);
-            }
-            printf("\n");
+        printBST(root->right_child, level + 1);
+        for (int i = 0; i < level; i++) {
+            printf("    ");
         }
-        printf("\n");
-
-        // Print right subtree
-        printBST(root->right_child);
+        printf("%c\n", root->mat->name);
+        printBST(root->left_child, level + 1);
     }
 }
 
 // int main() {
 
-//     // const char* exprA = "A = 3    2  [4 5 ; 19  -34;192     -9110;] \n";
-//     // matrix_sf* a = create_matrix_sf('A', exprA);
-//     // print_matrix_sf(a);
-//     const char* exprA = "A = 3 4[-4 18 6 7; 10 -14    29 8  ;21 -99 0 7;]\n";
+//     const char* exprA = "A = 2 2 [1 2; 3 4;]";
 //     matrix_sf* a = create_matrix_sf('A', exprA);
-//     print_matrix_sf(a);
+//     //print_matrix_sf(a);
 
-//     const char* exprB = "A = 2    2  [4 5 ; 19  -34;] \n";
+//     const char* exprB = "A = 2 2 [5 6; 7 8;]";
 //     matrix_sf* b = create_matrix_sf('B', exprB);
-//      print_matrix_sf(b);
+//     //print_matrix_sf(b);
 
-//     const char* exprC = "A = 2 2 [9 10 ; 11 12;]\n";
+//     const char* exprC = "A = 2 2 [9 10; 11 12;]";
 //     matrix_sf* c = create_matrix_sf('C', exprC);
-//      print_matrix_sf(c);
+//     //print_matrix_sf(c);
 
-//     const char* exprD = "A = 2 2 [13 14; 15 16;]\n";
+//     const char* exprD = "A = 2 2 [13 14; 15 16;]";
 //     matrix_sf* d = create_matrix_sf('D', exprD);
-//      print_matrix_sf(d);
+//     //print_matrix_sf(d);
 
 //     bst_sf *root = NULL;
 
 //     bst_sf *bst = insert_bst_sf(a, root);
-//     printBST(bst);
-
 //     bst = insert_bst_sf(b, bst);
-//     printBST(bst);
-
 //     bst = insert_bst_sf(c, bst);
-//     printBST(bst);
-
 //     bst = insert_bst_sf(d, bst);
-//     printBST(bst);
 
-//     // char * expr = "Z = (A +B)\' * C * (D\' + A)\' \n";
-//     // matrix_sf *eval = evaluate_expr_sf('Z', expr, root);
+   
+//     // char * expr =  "(A +B)\' * C * (D\' + A)\' \n";
+//     //print_matrix_sf(add_mats_sf(a, b));
+//     char * expr =  "(A+B) + C";
+//     matrix_sf *eval = evaluate_expr_sf('Z', expr, bst);
+//     print_matrix_sf(eval);
 
 // }
