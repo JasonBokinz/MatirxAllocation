@@ -64,7 +64,7 @@ void free_bst_sf(bst_sf *root) {
 }
 
 matrix_sf* add_mats_sf(const matrix_sf *mat1, const matrix_sf *mat2) {
-    matrix_sf *sum = (matrix_sf *)malloc(sizeof(matrix_sf) + mat1->num_cols * mat1->num_rows * sizeof(int));
+   matrix_sf *sum = (matrix_sf *)malloc(sizeof(matrix_sf) + mat1->num_cols * mat1->num_rows * sizeof(int));
     sum->name = '?';
     sum->num_cols = mat2->num_cols;
     sum->num_rows = mat2->num_rows;
@@ -78,7 +78,7 @@ matrix_sf* add_mats_sf(const matrix_sf *mat1, const matrix_sf *mat2) {
 }
 
 matrix_sf* mult_mats_sf(const matrix_sf *mat1, const matrix_sf *mat2) {
-    matrix_sf *product = (matrix_sf *)malloc(sizeof(matrix_sf) + mat1->num_cols * mat1->num_rows * sizeof(int));
+    matrix_sf *product = (matrix_sf *)malloc(sizeof(matrix_sf) + mat1->num_rows * mat2->num_cols * sizeof(int));
     product->name = '?';
     product->num_cols = mat2->num_cols;
     product->num_rows = mat1->num_rows;
@@ -96,7 +96,7 @@ matrix_sf* mult_mats_sf(const matrix_sf *mat1, const matrix_sf *mat2) {
 }
 
 matrix_sf* transpose_mat_sf(const matrix_sf *mat) {
-    matrix_sf *transpose = (matrix_sf *)malloc(sizeof(matrix_sf) + mat->num_cols  *mat->num_rows * sizeof(int));
+    matrix_sf *transpose = (matrix_sf *)malloc(sizeof(matrix_sf) + mat->num_cols * mat->num_rows * sizeof(int));
     transpose->name = '?';
     transpose->num_rows = mat->num_cols;
     transpose->num_cols = mat->num_rows;
@@ -113,19 +113,22 @@ matrix_sf* create_matrix_sf(char name, const char *expr) {
     char *expr_copy = (char *)malloc(strlen(expr) + 1);
     strcpy(expr_copy, expr);
 
-    char *ptr;
-    char *curr = strtok_r((char *)expr_copy, "=", &ptr);
+    char *ptr, *curr;
+    if (strstr(expr, "=") != NULL) {
+        curr = strtok_r((char *)expr_copy, "=", &ptr);
+        curr = strtok_r(NULL, " \t\n", &ptr);
+    } else {
+        curr = strtok_r((char *)expr_copy, " \t\n", &ptr);
+    }
 
     /* Capture number of rows */
-    curr = strtok_r(NULL, " \t\n", &ptr);
     unsigned int rows = atoi(curr);
 
     /* Capture number of columns */
-    curr = strtok_r(NULL, " \t\n", &ptr);
-    unsigned int cols = atoi(curr);
-
-    /* Capture the values */
     curr = strtok_r(NULL, "[", &ptr);
+    unsigned int cols = atoi(curr);
+    curr = strtok_r(NULL, "", &ptr);
+
 
     int *vals = (int *)malloc(rows * cols * sizeof(int));
     for (unsigned int i = 0; i < rows * cols; i++) {
@@ -136,19 +139,20 @@ matrix_sf* create_matrix_sf(char name, const char *expr) {
     }
 
     /* Create matrix */
-    matrix_sf *mat = (matrix_sf *)malloc(sizeof(char) + 2 * sizeof(unsigned int) + sizeof(int) * rows * cols);
+    matrix_sf *mat = (matrix_sf *)malloc(sizeof(matrix_sf) + rows * cols * sizeof(int));
     mat->name = name;
     mat->num_cols = cols;
     mat->num_rows = rows;
     memcpy(mat->values, vals, rows * cols * sizeof(int));
-
+    free(vals);
+    free(expr_copy);
     return mat;
 }
 
 char* infix2postfix_sf(char *infix) {
     unsigned int len = strlen(infix);
     char* postfix = (char *)malloc((len + 1) * sizeof(char));
-    char *stack = (char *)malloc((len + 1) * sizeof(char));
+    char stack[MAX_LINE_LEN];
     int top = 0;
     int index = 0;
 
@@ -174,61 +178,61 @@ char* infix2postfix_sf(char *infix) {
         postfix[index++] = stack[top--];
     }
     postfix[index] = '\0';
-    free(stack);
     return postfix;
 }
 
 matrix_sf* evaluate_expr_sf(char name, char *expr, bst_sf *root) {
     char *postfix = infix2postfix_sf(expr);
-    printf("Postfix:%s\n", postfix);
-    unsigned int len = strlen(postfix);
-    matrix_sf **stack = (matrix_sf **)malloc((len + 1) * sizeof(matrix_sf));
+    matrix_sf *stack[MAX_LINE_LEN];
     int top = 0;
 
     char *curr = postfix;
+    matrix_sf *result = NULL;
+
     while (*curr != '\0') {
         if ((*curr >= 'A' && *curr <= 'Z') || (*curr >= 'a' && *curr <= 'z')) {
-            printf("Found a letter:\n");
             matrix_sf *operand = find_bst_sf(curr[0], root);
             stack[++top] = operand;
-            print_matrix_sf(operand);
         }
         else if ((*curr == '+') || (*curr == '*') || (*curr == '\'')) {
-            printf("Found a sign:\n");
-            matrix_sf **result;
+            matrix_sf *operand1 = NULL;
+            matrix_sf *operand2 = NULL;
             switch(*curr) {
-                matrix_sf **operand1, **operand2;
                 case '+': 
-                    operand2 = &stack[top--];
-                    operand1 = &stack[top--];
-                    print_matrix_sf(*operand1);
-                    print_matrix_sf(*operand2);
+                    operand2 = stack[top--];
+                    operand1 = stack[top--];
 
-                    result = add_mats_sf(*operand1, *operand2);
-                    print_matrix_sf(result);
+                    result = add_mats_sf(operand1, operand2);
                     break;
                 case '*':
-                    operand2 = &stack[top--];
-                    operand1 = &stack[top--];
-                    print_matrix_sf(*operand1);
-                    print_matrix_sf(*operand2);
+                    operand2 = stack[top--];
+                    operand1 = stack[top--];
 
-                    result = mult_mats_sf(*operand1, *operand2);
+                    result = mult_mats_sf(operand1, operand2);
                     break;
                 case '\'':
-                    print_matrix_sf(*operand1);
+                    operand1 = stack[top--];
 
-                    result = transpose_mat_sf(stack[top--]);
+                    result = transpose_mat_sf(operand1);
                     break;
             }
             stack[++top] = result;
+            if (operand1 && !isalpha(operand1->name)) {
+                free(operand1);
+            }
+            if (operand2 && !isalpha(operand2->name)) {
+                free(operand2);
+            }
         }
         curr++;
     }
-    matrix_sf **evaluation = &stack[top--];
+    result = stack[top--];
+    matrix_sf *finalResult = copy_matrix(result->num_rows, result->num_cols, result->values);
+    finalResult->name = name;
+    
+    free(result);
     free(postfix);
-    free(stack);
-    return *evaluation;
+    return finalResult;
 }
 
 matrix_sf *execute_script_sf(char *filename) {
@@ -237,27 +241,34 @@ matrix_sf *execute_script_sf(char *filename) {
     bst_sf *bst = NULL;
     char *line = NULL;
     size_t max = MAX_LINE_LEN;
+    matrix_sf *result = NULL;
     while (getline(&line, &max, file) != -1) {
-        char name, *ptr, *expr;
-        char *curr = strtok_r(line, "", &ptr);
-        curr = strtok_r(NULL, "=", &ptr);
+        char name = '\0';
+        char *ptr = NULL;
+        char *expr = NULL;
+
+        char *curr = strtok_r(line, "=", &ptr);
         name = curr[0];
 
         curr = strtok_r(NULL, "", &ptr);
         expr = curr;
-        if (strstr(line, "[") != NULL) {
+
+        if (strstr(expr, "[") != NULL) {
             matrix_sf *mat = create_matrix_sf(name, (const char*)expr);
             bst = insert_bst_sf(mat, bst);
         } else {
-            matrix_sf *result = evaluate_expr_sf(name, expr, bst);
+            result = evaluate_expr_sf(name, expr, bst);
             bst = insert_bst_sf(result, bst);
         }
         free(line);
         line = NULL;
     }
+    free(line);
     fclose(file);
+    matrix_sf *resultCopy = copy_matrix(result->num_rows, result->num_cols, result->values);
+    resultCopy->name = result->name;
     free_bst_sf(bst);
-    return NULL;
+    return resultCopy;
 }
 
 // This is a utility function used during testing. Feel free to adapt the code to implement some of
@@ -285,48 +296,3 @@ void print_matrix_sf(matrix_sf *mat) {
     }
     printf("\n");
 }
-
-void printBST(bst_sf *root, int level) {
-    if (root != NULL) {
-        printBST(root->right_child, level + 1);
-        for (int i = 0; i < level; i++) {
-            printf("    ");
-        }
-        printf("%c\n", root->mat->name);
-        printBST(root->left_child, level + 1);
-    }
-}
-
-// int main() {
-
-//     const char* exprA = "A = 2 2 [1 2; 3 4;]";
-//     matrix_sf* a = create_matrix_sf('A', exprA);
-//     //print_matrix_sf(a);
-
-//     const char* exprB = "A = 2 2 [5 6; 7 8;]";
-//     matrix_sf* b = create_matrix_sf('B', exprB);
-//     //print_matrix_sf(b);
-
-//     const char* exprC = "A = 2 2 [9 10; 11 12;]";
-//     matrix_sf* c = create_matrix_sf('C', exprC);
-//     //print_matrix_sf(c);
-
-//     const char* exprD = "A = 2 2 [13 14; 15 16;]";
-//     matrix_sf* d = create_matrix_sf('D', exprD);
-//     //print_matrix_sf(d);
-
-//     bst_sf *root = NULL;
-
-//     bst_sf *bst = insert_bst_sf(a, root);
-//     bst = insert_bst_sf(b, bst);
-//     bst = insert_bst_sf(c, bst);
-//     bst = insert_bst_sf(d, bst);
-
-   
-//     // char * expr =  "(A +B)\' * C * (D\' + A)\' \n";
-//     //print_matrix_sf(add_mats_sf(a, b));
-//     char * expr =  "(A+B) + C";
-//     matrix_sf *eval = evaluate_expr_sf('Z', expr, bst);
-//     print_matrix_sf(eval);
-
-// }
